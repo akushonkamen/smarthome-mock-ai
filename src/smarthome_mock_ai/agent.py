@@ -12,7 +12,11 @@ class SmartHomeAgent:
 
     # API 配置
     API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-    API_KEY = os.getenv("ZHIPU_API_KEY", "")
+
+    @property
+    def API_KEY(self) -> str:
+        """获取 API Key."""
+        return os.getenv("ZHIPU_API_KEY", "")
 
     def __init__(self, simulator: Any) -> None:
         """初始化 Agent.
@@ -352,11 +356,12 @@ class SmartHomeAgent:
         Returns:
             API 响应
         """
-        if not self.API_KEY:
+        api_key = self.API_KEY
+        if not api_key:
             return {"error": "API Key 未设置,请在环境变量中设置 ZHIPU_API_KEY"}
 
         headers = {
-            "Authorization": f"Bearer {self.API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
@@ -375,9 +380,13 @@ class SmartHomeAgent:
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
-            return {"error": f"API 请求失败: {e}"}
+            error_detail = e.response.text if e.response else "No response"
+            return {"error": f"API 请求失败: {e} - {error_detail}"}
         except Exception as e:
-            return {"error": f"请求异常: {e}"}
+            import traceback
+
+            error_trace = traceback.format_exc()
+            return {"error": f"请求异常: {e}\n{error_trace}"}
 
     def _execute_tool_call(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """执行工具调用.
