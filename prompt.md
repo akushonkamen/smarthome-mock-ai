@@ -1,19 +1,18 @@
-Role: Senior DevOps & Python Architect (always write Chinese frontend and respond in Chinese)
-Project Name: SmartHome-Mock-AI
+The virtual devices are ready. Now let's implement the "AI Brain".
 
-Objective: Initialize a Python project for an LLM-controlled home automation system. 
-Constraint: Since I do not have physical hardware, we are building a "Simulation First" architecture.
+Objective: Connect an LLM to control the virtual devices using Function Calling (or JSON output parsing).
 
-Task 1: Project Setup & CI/CD
-1. Initialize a git repository in the current directory.
-2. Set up the project structure using `poetry` or standard `pip` with a `src/` and `tests/` layout.
-3. Create a `.github/workflows/ci.yml` file immediately. This workflow must:
-   - Run on `push` and `pull_request`.
-   - Install Python 3.10+.
-   - Install dependencies.
-   - Run `ruff` or `flake8` for linting (Enforce strict standards).
-   - Run `pytest` for testing.
-4. Create a `README.md` explaining the architecture (LLM -> Intent Parser -> Virtual Device Manager).
-5. Push this initial setup to a new GitHub repository named 'smarthome-mock-ai'.
+Task 3: Agent Implementation & CLI
+1. Create an `Agent` class. It should accept a user's natural language input (e.g., "It's too hot in here").
+2. Define "Tools" or "Functions" describing our available devices (e.g., `set_temperature`, `turn_on_light`).
+3. Use an LLM API (2b67595b80794ec48c41937c872e64bc.pRRVyDaLVhfbPXv4) to reason,接口文档在这里：https://docs.bigmodel.cn/api-reference/模型-api/对话补全. The LLM should decide which tool to call based on the user's input and the current state of devices.
+   - *Requirement:* Handle the logic where the LLM converts "I'm going to sleep" -> `turn_off(all_lights)`.
+4. Build a `main.py` with a simple CLI loop:
+   - User types command.
+   - Agent processes it.
+   - Simulator executes it and prints the result.
+   - Loop continues.
+5. Create a `.env.example` file for the API Key.
+6. Push the final code.
 
-Note: Do not write the application logic yet. I want to see the CI/CD pipeline pass with a dummy test first.
+Start by defining the Tool/Function schemas based on our `SmartDevice` classes.
