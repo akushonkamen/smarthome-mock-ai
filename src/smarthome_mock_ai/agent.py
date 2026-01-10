@@ -375,13 +375,20 @@ class SmartHomeAgent:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            # 配置 HTTP 客户端,禁用代理以避免连接问题
+            async with httpx.AsyncClient(
+                timeout=30.0,
+                proxy=None,
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            ) as client:
                 response = await client.post(self.API_URL, json=payload, headers=headers)
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
             error_detail = e.response.text if e.response else "No response"
             return {"error": f"API 请求失败: {e} - {error_detail}"}
+        except httpx.ConnectError as e:
+            return {"error": f"网络连接失败: {e}. 请检查网络连接或代理设置"}
         except Exception as e:
             import traceback
 
