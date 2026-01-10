@@ -322,3 +322,48 @@ class HomeSimulator:
             if isinstance(device, Light):
                 results.append(self.turn_on_light(device_id))
         return results
+
+    def lock_all_doors(self) -> list[str]:
+        """锁定所有门."""
+        results = []
+        for device_id in self.devices:
+            device = self.devices[device_id]
+            if isinstance(device, Door):
+                results.append(self.lock_door(device_id))
+        return results
+
+    def unlock_all_doors(self) -> list[str]:
+        """解锁所有门."""
+        results = []
+        for device_id in self.devices:
+            device = self.devices[device_id]
+            if isinstance(device, Door):
+                results.append(self.unlock_door(device_id))
+        return results
+
+    def close_all_curtains(self) -> list[str]:
+        """关闭所有窗帘."""
+        results = []
+        for device_id in self.devices:
+            device = self.devices[device_id]
+            if isinstance(device, Curtain):
+                results.append(self.close_curtain(device_id))
+        return results
+
+    def open_all_curtains(self) -> list[str]:
+        """打开所有窗帘."""
+        results = []
+        for device_id in self.devices:
+            device = self.devices[device_id]
+            if isinstance(device, Curtain):
+                results.append(self.open_curtain(device_id))
+        return results
+
+    def turn_off_all_fans(self) -> list[str]:
+        """关闭所有风扇."""
+        results = []
+        for device_id in self.devices:
+            device = self.devices[device_id]
+            if isinstance(device, Fan):
+                results.append(self.turn_off_fan(device_id))
+        return results

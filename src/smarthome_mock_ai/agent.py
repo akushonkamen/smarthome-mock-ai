@@ -306,6 +306,61 @@ class SmartHomeAgent:
             {
                 "type": "function",
                 "function": {
+                    "name": "turn_on_all_lights",
+                    "description": "打开所有的灯光设备",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "lock_all_doors",
+                    "description": "锁定所有的门 (通常用于离家、睡觉等场景)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "unlock_all_doors",
+                    "description": "解锁所有的门 (通常用于回家场景)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "close_all_curtains",
+                    "description": "关闭所有的窗帘 (通常用于看电视、睡觉等场景)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "open_all_curtains",
+                    "description": "打开所有的窗帘 (通常用于起床、早上等场景)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "get_all_device_statuses",
                     "description": "获取所有设备的当前状态",
                     "parameters": {
@@ -334,17 +389,20 @@ class SmartHomeAgent:
             f"- 风扇: living_room_fan(客厅风扇), bedroom_fan(卧室风扇)\n"
             f"- 窗帘: living_room_curtain(客厅窗帘), bedroom_curtain(卧室窗帘)\n"
             f"- 门锁: front_door(前门), back_door(后门)\n\n"
-            f"理解用户意图时请注意:\n"
-            f'1. "太热了" → 调低温度或打开风扇\n'
-            f'2. "太冷了" → 调高温度\n'
-            f'3. "睡觉了"/"睡觉"/"晚安" → 关闭所有灯光\n'
-            f'4. "出门"/"离开" → 关闭所有灯光,锁定所有门\n'
-            f'5. "回家" → 打开客厅灯,解锁门\n'
-            f'6. "看电视" → 调暗客厅灯,关闭窗帘\n'
-            f'7. "起床" → 打开窗帘,打开卧室灯\n'
-            f'8. "太亮了" → 调暗灯光或关闭窗帘\n\n'
-            f"只调用必要的工具,不要过度操作。如果用户询问状态,"
-            f"使用 get_all_device_statuses。"
+            f"重要规则:\n"
+            f"1. 必须始终使用可用的工具/函数来执行操作,不要只回复文本\n"
+            f"2. 理解用户意图时,立即调用相应的工具:\n"
+            f'   - "太热了" → 调低温度(set_temperature到20-22度)或打开风扇\n'
+            f'   - "太冷了" → 调高温度(set_temperature到25-26度)\n'
+            f'   - "睡觉了"/"睡觉"/"晚安" → 关闭所有灯光(turn_off_all_lights)\n'
+            f'   - "出门"/"离开" → 关闭所有灯光(turn_off_all_lights),锁定所有门(lock_all_doors)\n'
+            f'   - "回家"/"回家啦" → 打开客厅灯(turn_on_light living_room_light),解锁所有门(unlock_all_doors)\n'
+            f'   - "看电视" → 调暗客厅灯(set_light_brightness到30%),关闭所有窗帘(close_all_curtains)\n'
+            f'   - "起床"/"早上好" → 打开所有窗帘(open_all_curtains),打开卧室灯\n'
+            f'   - "太亮了" → 调暗灯光或关闭窗帘\n\n'
+            f"3. 不要过度解释,直接执行工具调用\n"
+            f"4. 如果用户询问状态,使用 get_all_device_statuses\n"
+            f"5. 批量操作时优先使用批量工具(如turn_off_all_lights而非单独关闭每个灯)"
         )
 
     async def _call_llm(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
@@ -432,6 +490,21 @@ class SmartHomeAgent:
                 return self.simulator.unlock_door(**arguments)
             if tool_name == "turn_off_all_lights":
                 results = self.simulator.turn_off_all_lights()
+                return "\n".join(results)
+            if tool_name == "turn_on_all_lights":
+                results = self.simulator.turn_on_all_lights()
+                return "\n".join(results)
+            if tool_name == "lock_all_doors":
+                results = self.simulator.lock_all_doors()
+                return "\n".join(results)
+            if tool_name == "unlock_all_doors":
+                results = self.simulator.unlock_all_doors()
+                return "\n".join(results)
+            if tool_name == "close_all_curtains":
+                results = self.simulator.close_all_curtains()
+                return "\n".join(results)
+            if tool_name == "open_all_curtains":
+                results = self.simulator.open_all_curtains()
                 return "\n".join(results)
             if tool_name == "get_all_device_statuses":
                 statuses = self.simulator.get_all_statuses()
