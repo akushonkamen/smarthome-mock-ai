@@ -1,10 +1,11 @@
-"""智能家居模拟器 - 管理所有虚拟设备."""
+"""智能家居模拟器 - 动态设备注册和管理系统."""
 
 from typing import Any
 
 from smarthome_mock_ai.device_persistence import DeviceStateManager, get_device_state_manager
 from smarthome_mock_ai.devices import (
     Curtain,
+    DeviceMetadata,
     Door,
     Fan,
     Light,
@@ -14,10 +15,10 @@ from smarthome_mock_ai.devices import (
 
 
 class HomeSimulator:
-    """家庭设备模拟器."""
+    """家庭设备模拟器 - 支持动态设备注册."""
 
     def __init__(self, persist_state: bool = True, state_file: str | None = None) -> None:
-        """初始化模拟器和所有设备.
+        """初始化模拟器.
 
         Args:
             persist_state: Whether to save/load device states from file
@@ -26,75 +27,70 @@ class HomeSimulator:
         self.devices: dict[str, SmartDevice] = {}
         self.persist_state = persist_state
         self.state_manager = get_device_state_manager(state_file) if persist_state else None
-        self._setup_default_devices()
+        # Note: No longer calling _setup_default_devices here
+        # Devices must be registered via register_device() method
         self._load_states()
 
-    def _setup_default_devices(self) -> None:
-        """设置默认设备配置."""
-        # 灯光设备
-        self.devices["living_room_light"] = Light(
-            device_id="living_room_light",
-            name="客厅灯",
-            room="living_room",
-        )
-        self.devices["bedroom_light"] = Light(
-            device_id="bedroom_light",
-            name="卧室灯",
-            room="bedroom",
-        )
-        self.devices["kitchen_light"] = Light(
-            device_id="kitchen_light",
-            name="厨房灯",
-            room="kitchen",
-        )
-        self.devices["bathroom_light"] = Light(
-            device_id="bathroom_light",
-            name="浴室灯",
-            room="bathroom",
-        )
+    # ========== 设备注册管理 ==========
 
-        # 温控器
-        self.devices["thermostat"] = Thermostat(
-            device_id="thermostat",
-            name="主温控器",
-            room="living_room",
-        )
+    def register_device(self, device: SmartDevice) -> str:
+        """注册一个新设备到系统中.
 
-        # 门锁
-        self.devices["front_door"] = Door(
-            device_id="front_door",
-            name="前门",
-            location="entrance",
-        )
-        self.devices["back_door"] = Door(
-            device_id="back_door",
-            name="后门",
-            location="backyard",
-        )
+        Args:
+            device: 设备实例
 
-        # 风扇
-        self.devices["living_room_fan"] = Fan(
-            device_id="living_room_fan",
-            name="客厅风扇",
-            room="living_room",
-        )
-        self.devices["bedroom_fan"] = Fan(
-            device_id="bedroom_fan",
-            name="卧室风扇",
-            room="bedroom",
-        )
+        Returns:
+            注册的设备ID
 
-        # 窗帘
-        self.devices["living_room_curtain"] = Curtain(
-            device_id="living_room_curtain",
-            name="客厅窗帘",
-            room="living_room",
-        )
-        self.devices["bedroom_curtain"] = Curtain(
-            device_id="bedroom_curtain",
-            name="卧室窗帘",
-            room="bedroom",
-        )
+        Raises:
+            ValueError: 如果设备ID已存在
+        """
+        if device.device_id in self.devices:
+            msg = f"设备ID '{device.device_id}' 已存在"
+            raise ValueError(msg)
+
+        self.devices[device.device_id] = device
+        self._save_after_action()
+        return device.device_id
+
+    def unregister_device(self, device_id: str) -> bool:
+        """从系统中注销一个设备.
+
+        Args:
+            device_id: 要注销的设备ID
+
+        Returns:
+            True if device was unregistered, False if device not found
+        """
+        if device_id not in self.devices:
+            return False
+
+        del self.devices[device_id]
+        self._save_after_action()
+        return True
+
+    def get_device_details(self, device_id: str) -> dict[str, Any] | None:
+        """获取设备的完整元数据和当前状态.
+
+        Args:
+            device_id: 设备ID
+
+        Returns:
+            包含 metadata 和 current_state 的字典,如果设备不存在返回 None
+        """
+        if device_id not in self.devices:
+            return None
+
+        device = self.devices[device_id]
+        metadata = device.get_metadata()
+        status = device.get_status()
+
+        return {
+            "metadata": metadata.to_dict(),
+            "current_state": status.state,
+        }
+
+    # ========== 设备查询方法 ==========
 
     def get_device(self, device_id: str) -> SmartDevice:
         """获取设备.
@@ -116,6 +112,44 @@ class HomeSimulator:
     def list_all_devices(self) -> list[str]:
         """列出所有设备ID."""
         return list(self.devices.keys())
+
+    def list_devices_by_type(self, device_type: str) -> list[str]:
+        """按类型列出设备ID.
+
+        Args:
+            device_type: 设备类型 (light, thermostat, door, fan, curtain)
+
+        Returns:
+            匹配类型的设备ID列表
+        """
+        result = []
+        for device_id, device in self.devices.items():
+            if device.device_type.value == device_type:
+                result.append(device_id)
+        return result
+
+    def list_devices_by_location(self, location: str) -> list[str]:
+        """按位置列出设备ID.
+
+        Args:
+            location: 位置/房间名称
+
+        Returns:
+            匹配位置的设备ID列表
+        """
+        result = []
+        for device_id, device in self.devices.items():
+            if device.location == location:
+                result.append(device_id)
+        return result
+
+    def get_all_metadata(self) -> dict[str, dict[str, Any]]:
+        """获取所有设备的元数据.
+
+        Returns:
+            设备ID到元数据字典的映射
+        """
+        return {device_id: device.get_metadata().to_dict() for device_id, device in self.devices.items()}
 
     def get_all_statuses(self) -> dict[str, dict[str, Any]]:
         """获取所有设备状态."""

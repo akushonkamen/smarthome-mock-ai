@@ -39,24 +39,63 @@ class DeviceStatus:
         return f"{self.device_type.value}[{self.device_id}]: {state_str}"
 
 
+@dataclass
+class DeviceMetadata:
+    """设备元数据."""
+
+    device_id: str
+    name: str
+    device_type: DeviceType
+    capabilities: list[str]
+    location: str
+    model: str = "Generic"
+    manufacturer: str = "SmartHome AI"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary representation."""
+        return {
+            "device_id": self.device_id,
+            "name": self.name,
+            "device_type": self.device_type.value,
+            "capabilities": self.capabilities,
+            "location": self.location,
+            "model": self.model,
+            "manufacturer": self.manufacturer,
+        }
+
+
 class SmartDevice(ABC):
     """智能设备抽象基类."""
 
-    def __init__(self, device_id: str, name: str) -> None:
+    # Default capabilities that subclasses should override
+    _capabilities: list[str] = []
+
+    def __init__(self, device_id: str, name: str, location: str = "unknown") -> None:
         """初始化设备.
 
         Args:
             device_id: 设备唯一标识符
             name: 设备名称
+            location: 设备位置（房间或区域）
         """
         self.device_id = device_id
         self.name = name
+        self.location = location
         self._state: dict[str, Any] = {}
 
     @property
     @abstractmethod
     def device_type(self) -> DeviceType:
         """返回设备类型."""
+
+    @property
+    def capabilities(self) -> list[str]:
+        """返回设备能力列表.
+
+        Returns:
+            List of capability strings (e.g., ["turn_on", "turn_off", "set_brightness"])
+        """
+        return self._capabilities.copy()
 
     @abstractmethod
     def get_status(self) -> DeviceStatus:
@@ -66,9 +105,26 @@ class SmartDevice(ABC):
     def reset(self) -> None:
         """重置设备到初始状态."""
 
+    def get_metadata(self) -> DeviceMetadata:
+        """获取设备元数据.
+
+        Returns:
+            DeviceMetadata object containing device information
+        """
+        return DeviceMetadata(
+            device_id=self.device_id,
+            name=self.name,
+            device_type=self.device_type,
+            capabilities=self.capabilities,
+            location=self.location,
+            model=self.__class__.__name__,
+        )
+
 
 class Light(SmartDevice):
     """智能灯光设备."""
+
+    _capabilities = ["turn_on", "turn_off", "set_brightness", "set_color"]
 
     def __init__(self, device_id: str, name: str, room: str) -> None:
         """初始化灯光设备.
@@ -78,7 +134,7 @@ class Light(SmartDevice):
             name: 设备名称
             room: 所在房间
         """
-        super().__init__(device_id, name)
+        super().__init__(device_id, name, location=room)
         self.room = room
         self._is_on = False
         self._brightness = 100  # 0-100
@@ -142,6 +198,8 @@ class Light(SmartDevice):
 class Thermostat(SmartDevice):
     """智能温控器设备."""
 
+    _capabilities = ["set_temperature", "set_mode", "get_current_temp"]
+
     def __init__(self, device_id: str, name: str, room: str) -> None:
         """初始化温控器.
 
@@ -150,7 +208,7 @@ class Thermostat(SmartDevice):
             name: 设备名称
             room: 所在房间
         """
-        super().__init__(device_id, name)
+        super().__init__(device_id, name, location=room)
         self.room = room
         self._current_temp = 22.0  # 摄氏度
         self._target_temp = 22.0
@@ -210,6 +268,8 @@ class Thermostat(SmartDevice):
 class Door(SmartDevice):
     """智能门锁设备."""
 
+    _capabilities = ["lock", "unlock", "open", "close"]
+
     def __init__(self, device_id: str, name: str, location: str) -> None:
         """初始化门锁.
 
@@ -218,8 +278,7 @@ class Door(SmartDevice):
             name: 设备名称
             location: 位置
         """
-        super().__init__(device_id, name)
-        self.location = location
+        super().__init__(device_id, name, location=location)
         self._is_locked = True
         self._is_closed = True
 
@@ -269,6 +328,8 @@ class Door(SmartDevice):
 class Fan(SmartDevice):
     """智能风扇设备."""
 
+    _capabilities = ["turn_on", "turn_off", "set_speed"]
+
     def __init__(self, device_id: str, name: str, room: str) -> None:
         """初始化风扇.
 
@@ -277,7 +338,7 @@ class Fan(SmartDevice):
             name: 设备名称
             room: 所在房间
         """
-        super().__init__(device_id, name)
+        super().__init__(device_id, name, location=room)
         self.room = room
         self._is_on = False
         self._speed = 1  # 1-3
@@ -329,6 +390,8 @@ class Fan(SmartDevice):
 class Curtain(SmartDevice):
     """智能窗帘设备."""
 
+    _capabilities = ["open", "close", "set_position"]
+
     def __init__(self, device_id: str, name: str, room: str) -> None:
         """初始化窗帘.
 
@@ -337,7 +400,7 @@ class Curtain(SmartDevice):
             name: 设备名称
             room: 所在房间
         """
-        super().__init__(device_id, name)
+        super().__init__(device_id, name, location=room)
         self.room = room
         self._position = 0  # 0=closed, 100=open
 

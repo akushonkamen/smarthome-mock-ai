@@ -7,8 +7,65 @@ from typing import Any, NoReturn
 
 from dotenv import load_dotenv
 from smarthome_mock_ai.agent import SmartHomeAgent
+from smarthome_mock_ai.devices import (
+    Curtain,
+    Door,
+    Fan,
+    Light,
+    Thermostat,
+)
 from smarthome_mock_ai.simulator import HomeSimulator
 from smarthome_mock_ai.voice import VoiceListener, get_default_voice_listener
+
+
+def bootstrap_default_devices(simulator: HomeSimulator) -> None:
+    """注册默认设备到模拟器.
+
+    Args:
+        simulator: HomeSimulator 实例
+    """
+    # 灯光设备
+    simulator.register_device(
+        Light(device_id="living_room_light", name="客厅灯", room="living_room")
+    )
+    simulator.register_device(
+        Light(device_id="bedroom_light", name="卧室灯", room="bedroom")
+    )
+    simulator.register_device(
+        Light(device_id="kitchen_light", name="厨房灯", room="kitchen")
+    )
+    simulator.register_device(
+        Light(device_id="bathroom_light", name="浴室灯", room="bathroom")
+    )
+
+    # 温控器
+    simulator.register_device(
+        Thermostat(device_id="thermostat", name="主温控器", room="living_room")
+    )
+
+    # 门锁
+    simulator.register_device(
+        Door(device_id="front_door", name="前门", location="entrance")
+    )
+    simulator.register_device(
+        Door(device_id="back_door", name="后门", location="backyard")
+    )
+
+    # 风扇
+    simulator.register_device(
+        Fan(device_id="living_room_fan", name="客厅风扇", room="living_room")
+    )
+    simulator.register_device(
+        Fan(device_id="bedroom_fan", name="卧室风扇", room="bedroom")
+    )
+
+    # 窗帘
+    simulator.register_device(
+        Curtain(device_id="living_room_curtain", name="客厅窗帘", room="living_room")
+    )
+    simulator.register_device(
+        Curtain(device_id="bedroom_curtain", name="卧室窗帘", room="bedroom")
+    )
 
 
 def print_banner() -> None:
@@ -59,20 +116,33 @@ def print_device_list(simulator: HomeSimulator) -> None:
         simulator: 模拟器实例
     """
     print("\n📱 可用设备列表:\n")
-    categories = {
-        "💡 灯光": ["living_room_light", "bedroom_light", "kitchen_light", "bathroom_light"],
-        "🌡️  温控": ["thermostat"],
-        "💨 风扇": ["living_room_fan", "bedroom_fan"],
-        "🪟 窗帘": ["living_room_curtain", "bedroom_curtain"],
-        "🚪 门锁": ["front_door", "back_door"],
+
+    # Get all device metadata
+    all_metadata = simulator.get_all_metadata()
+
+    # Group by device type
+    type_emojis = {
+        "light": "💡 灯光",
+        "thermostat": "🌡️  温控",
+        "fan": "💨 风扇",
+        "curtain": "🪟 窗帘",
+        "door": "🚪 门锁",
     }
 
-    for category, device_ids in categories.items():
-        print(f"  {category}")
-        for device_id in device_ids:
-            device = simulator.get_device(device_id)
-            print(f"    - {device_id}: {device.name}")
-        print()
+    grouped: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for device_id, metadata in all_metadata.items():
+        device_type = metadata["device_type"]
+        if device_type not in grouped:
+            grouped[device_type] = []
+        grouped[device_type].append((device_id, metadata))
+
+    # Print by category
+    for device_type, emoji in type_emojis.items():
+        if device_type in grouped:
+            print(f"  {emoji}")
+            for device_id, metadata in grouped[device_type]:
+                print(f"    - {device_id}: {metadata['name']}")
+            print()
 
 
 def print_device_statuses(simulator: HomeSimulator) -> None:
@@ -355,8 +425,14 @@ async def run_cli() -> NoReturn:
     print_banner()
     print_help()
 
-    # 初始化模拟器和 Agent
+    # 初始化模拟器
     simulator = HomeSimulator()
+
+    # 注册默认设备
+    bootstrap_default_devices(simulator)
+    print(f"✓ 已注册 {len(simulator.list_all_devices())} 个默认设备\n")
+
+    # 初始化 Agent
     agent = SmartHomeAgent(simulator)
 
     # Train preferences on startup
