@@ -47,24 +47,62 @@ class SmartHomeAgent:
         Returns:
             工具定义列表
         """
-        return [
+        # Get dynamic device list for enum values
+        all_devices = self.simulator.list_all_devices()
+        all_metadata = self.simulator.get_all_metadata()
+
+        # Group devices by type
+        devices_by_type: dict[str, list[str]] = {}
+        for device_id, metadata in all_metadata.items():
+            device_type = metadata["device_type"]
+            if device_type not in devices_by_type:
+                devices_by_type[device_type] = []
+            devices_by_type[device_type].append(device_id)
+
+        tools = [
+            # ========== 查询工具 (QUERY - 不改变状态) ==========
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_device_state",
+                    "description": "查询单个设备的当前状态(不改变设备状态)。当用户询问某个设备的状态时使用此工具。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "device_id": {
+                                "type": "string",
+                                "description": "设备ID",
+                                "enum": all_devices,
+                            }
+                        },
+                        "required": ["device_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_all_device_statuses",
+                    "description": "获取所有设备的当前状态(不改变任何设备状态)。当用户询问整体状态或需要查看所有设备时使用。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
+            },
+            # ========== 控制工具 (COMMAND - 会改变状态) ==========
             {
                 "type": "function",
                 "function": {
                     "name": "turn_on_light",
-                    "description": "打开指定的灯光设备",
+                    "description": "打开指定的灯光设备 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "灯光设备ID",
-                                "enum": [
-                                    "living_room_light",
-                                    "bedroom_light",
-                                    "kitchen_light",
-                                    "bathroom_light",
-                                ],
+                                "enum": devices_by_type.get("light", []),
                             }
                         },
                         "required": ["device_id"],
@@ -75,19 +113,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "turn_off_light",
-                    "description": "关闭指定的灯光设备",
+                    "description": "关闭指定的灯光设备 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "灯光设备ID",
-                                "enum": [
-                                    "living_room_light",
-                                    "bedroom_light",
-                                    "kitchen_light",
-                                    "bathroom_light",
-                                ],
+                                "enum": devices_by_type.get("light", []),
                             }
                         },
                         "required": ["device_id"],
@@ -98,19 +131,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "set_light_brightness",
-                    "description": "设置灯光的亮度级别",
+                    "description": "设置灯光的亮度级别 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "灯光设备ID",
-                                "enum": [
-                                    "living_room_light",
-                                    "bedroom_light",
-                                    "kitchen_light",
-                                    "bathroom_light",
-                                ],
+                                "enum": devices_by_type.get("light", []),
                             },
                             "level": {
                                 "type": "integer",
@@ -127,19 +155,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "set_light_color",
-                    "description": "设置灯光的颜色",
+                    "description": "设置灯光的颜色 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "灯光设备ID",
-                                "enum": [
-                                    "living_room_light",
-                                    "bedroom_light",
-                                    "kitchen_light",
-                                    "bathroom_light",
-                                ],
+                                "enum": devices_by_type.get("light", []),
                             },
                             "color": {
                                 "type": "string",
@@ -154,14 +177,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "set_temperature",
-                    "description": "设置温控器的目标温度",
+                    "description": "设置温控器的目标温度 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "温控器设备ID",
-                                "enum": ["thermostat"],
+                                "enum": devices_by_type.get("thermostat", []),
                             },
                             "temp": {
                                 "type": "number",
@@ -178,14 +201,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "turn_on_fan",
-                    "description": "打开指定的风扇设备",
+                    "description": "打开指定的风扇设备 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "风扇设备ID",
-                                "enum": ["living_room_fan", "bedroom_fan"],
+                                "enum": devices_by_type.get("fan", []),
                             }
                         },
                         "required": ["device_id"],
@@ -196,14 +219,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "turn_off_fan",
-                    "description": "关闭指定的风扇设备",
+                    "description": "关闭指定的风扇设备 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "风扇设备ID",
-                                "enum": ["living_room_fan", "bedroom_fan"],
+                                "enum": devices_by_type.get("fan", []),
                             }
                         },
                         "required": ["device_id"],
@@ -214,14 +237,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "set_fan_speed",
-                    "description": "设置风扇的速度等级",
+                    "description": "设置风扇的速度等级 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "风扇设备ID",
-                                "enum": ["living_room_fan", "bedroom_fan"],
+                                "enum": devices_by_type.get("fan", []),
                             },
                             "speed": {
                                 "type": "integer",
@@ -238,14 +261,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "open_curtain",
-                    "description": "打开指定的窗帘",
+                    "description": "打开指定的窗帘 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "窗帘设备ID",
-                                "enum": ["living_room_curtain", "bedroom_curtain"],
+                                "enum": devices_by_type.get("curtain", []),
                             }
                         },
                         "required": ["device_id"],
@@ -256,14 +279,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "close_curtain",
-                    "description": "关闭指定的窗帘",
+                    "description": "关闭指定的窗帘 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "窗帘设备ID",
-                                "enum": ["living_room_curtain", "bedroom_curtain"],
+                                "enum": devices_by_type.get("curtain", []),
                             }
                         },
                         "required": ["device_id"],
@@ -274,14 +297,14 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "lock_door",
-                    "description": "锁定指定的门",
+                    "description": "锁定指定的门 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "门锁设备ID",
-                                "enum": ["front_door", "back_door"],
+                                "enum": devices_by_type.get("door", []),
                             }
                         },
                         "required": ["device_id"],
@@ -292,25 +315,26 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "unlock_door",
-                    "description": "解锁指定的门",
+                    "description": "解锁指定的门 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "device_id": {
                                 "type": "string",
                                 "description": "门锁设备ID",
-                                "enum": ["front_door", "back_door"],
+                                "enum": devices_by_type.get("door", []),
                             }
                         },
                         "required": ["device_id"],
                     },
                 },
             },
+            # ========== 批量控制工具 (COMMAND - 会改变多个设备状态) ==========
             {
                 "type": "function",
                 "function": {
                     "name": "turn_off_all_lights",
-                    "description": "关闭所有的灯光设备 (通常用于睡觉、离家等场景)",
+                    "description": "关闭所有的灯光设备 (通常用于睡觉、离家等场景 - 改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -321,7 +345,7 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "turn_on_all_lights",
-                    "description": "打开所有的灯光设备",
+                    "description": "打开所有的灯光设备 (改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -332,7 +356,7 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "lock_all_doors",
-                    "description": "锁定所有的门 (通常用于离家、睡觉等场景)",
+                    "description": "锁定所有的门 (通常用于离家、睡觉等场景 - 改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -343,7 +367,7 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "unlock_all_doors",
-                    "description": "解锁所有的门 (通常用于回家场景)",
+                    "description": "解锁所有的门 (通常用于回家场景 - 改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -354,7 +378,7 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "close_all_curtains",
-                    "description": "关闭所有的窗帘 (通常用于看电视、睡觉等场景)",
+                    "description": "关闭所有的窗帘 (通常用于看电视、睡觉等场景 - 改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -365,18 +389,7 @@ class SmartHomeAgent:
                 "type": "function",
                 "function": {
                     "name": "open_all_curtains",
-                    "description": "打开所有的窗帘 (通常用于起床、早上等场景)",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_all_device_statuses",
-                    "description": "获取所有设备的当前状态",
+                    "description": "打开所有的窗帘 (通常用于起床、早上等场景 - 改变状态)",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -384,39 +397,86 @@ class SmartHomeAgent:
                 },
             },
         ]
+        return tools
 
     def _build_system_prompt(self) -> str:
-        """构建系统提示词.
+        """构建系统提示词 with Thought Protocol.
 
         Returns:
             系统提示词字符串
         """
-        devices_info = "\n".join(self.simulator.list_all_devices())
+        all_metadata = self.simulator.get_all_metadata()
+
+        # Build device list string
+        device_list_str = ""
+        for device_id, metadata in all_metadata.items():
+            device_list_str += f"  - {device_id}: {metadata['name']} ({metadata['device_type']})\n"
+
         return (
-            f"你是一个智能家居控制助手。用户会用自然语言描述"
-            f"他们的需求,你需要理解并控制相应的设备。\n\n"
-            f"可用设备列表:\n{devices_info}\n\n"
-            f"设备ID说明:\n"
-            f"- 灯光: living_room_light(客厅灯), bedroom_light(卧室灯), "
-            f"kitchen_light(厨房灯), bathroom_light(浴室灯)\n"
-            f"- 温控器: thermostat(主温控器)\n"
-            f"- 风扇: living_room_fan(客厅风扇), bedroom_fan(卧室风扇)\n"
-            f"- 窗帘: living_room_curtain(客厅窗帘), bedroom_curtain(卧室窗帘)\n"
-            f"- 门锁: front_door(前门), back_door(后门)\n\n"
-            f"重要规则:\n"
-            f"1. 必须始终使用可用的工具/函数来执行操作,不要只回复文本\n"
-            f"2. 理解用户意图时,立即调用相应的工具:\n"
-            f'   - "太热了" → 调低温度(set_temperature到20-22度)或打开风扇\n'
-            f'   - "太冷了" → 调高温度(set_temperature到25-26度)\n'
-            f'   - "睡觉了"/"睡觉"/"晚安" → 关闭所有灯光(turn_off_all_lights)\n'
-            f'   - "出门"/"离开" → 关闭所有灯光(turn_off_all_lights),锁定所有门(lock_all_doors)\n'
-            f'   - "回家"/"回家啦" → 打开客厅灯(turn_on_light living_room_light),解锁所有门(unlock_all_doors)\n'
-            f'   - "看电视" → 调暗客厅灯(set_light_brightness到30%),关闭所有窗帘(close_all_curtains)\n'
-            f'   - "起床"/"早上好" → 打开所有窗帘(open_all_curtains),打开卧室灯\n'
-            f'   - "太亮了" → 调暗灯光或关闭窗帘\n\n'
-            f"3. 不要过度解释,直接执行工具调用\n"
-            f"4. 如果用户询问状态,使用 get_all_device_statuses\n"
-            f"5. 批量操作时优先使用批量工具(如turn_off_all_lights而非单独关闭每个灯)"
+            "# 智能家居控制助手\n\n"
+            "你是一个专业的智能家居控制助手。用户会用自然语言描述他们的需求，你需要理解并控制相应的设备。\n\n"
+            "## 可用设备列表\n"
+            f"{device_list_str}\n"
+            "## 思维协议 (Thought Protocol) - 必须严格遵循\n\n"
+            "在处理用户请求之前，你必须先进行意图分类。按以下步骤思考：\n\n"
+            "### 步骤 1: 意图分类\n"
+            "判断用户输入属于以下哪一类：\n\n"
+            "**CATEGORY: QUERY (查询)**\n"
+            "- 用户询问信息、状态、当前值\n"
+            "- 关键词: \"多少\"、\"是什么\"、\"怎么样\"、\"温度\"、\"状态\"、\"亮度\"、\"开了吗\"\n"
+            "- 规则: **仅使用 get_device_state 或 get_all_device_statuses**\n"
+            "- **禁止**: 任何会改变状态的工具 (set_*, turn_*, open_*, close_*, lock_*, unlock_*)\n\n"
+            "**CATEGORY: COMMAND (命令)**\n"
+            "- 用户要求改变、调整、操作设备\n"
+            "- 关键词: \"打开\"、\"关闭\"、\"设置\"、\"太热\"、\"太冷\"、\"我要\"、场景描述\n"
+            "- 规则: **使用控制工具** (set_*, turn_*, open_*, close_*, lock_*, unlock_*)\n\n"
+            "**CATEGORY: CHIT-CHAT (闲聊)**\n"
+            "- 一般性对话、问候、感谢\n"
+            "- 规则: **不使用任何工具**，直接回复文本\n\n"
+            "### 步骤 2: 执行验证\n"
+            "- 如果是 QUERY：只能使用查询工具，绝对不能调用任何会改变状态的工具\n"
+            "- 如果是 COMMAND：使用相应的控制工具\n"
+            "- 如果用户问\"X是什么\"，绝不能改变 X，只能报告 X 的状态\n\n"
+            "## 示例 (Few-Shot Examples)\n\n"
+            "### QUERY 示例 (只查询，不改变状态):\n\n"
+            "用户: \"现在温度多少?\"\n"
+            "思考: 用户询问当前温度 → QUERY 类别 → 使用 get_device_state 查询 thermostat\n"
+            "工具: get_device_state(device_id=\"thermostat\")\n\n"
+            "用户: \"客厅灯开着吗?\"\n"
+            "思考: 用户询问灯的状态 → QUERY 类别 → 使用 get_device_state 查询\n"
+            "工具: get_device_state(device_id=\"living_room_light\")\n\n"
+            "用户: \"所有设备状态怎么样?\"\n"
+            "思考: 用户询问整体状态 → QUERY 类别 → 使用 get_all_device_statuses\n"
+            "工具: get_all_device_statuses()\n\n"
+            "### COMMAND 示例 (执行操作):\n\n"
+            "用户: \"太冷了\"\n"
+            "思考: 用户表示冷，暗示需要升温 → COMMAND 类别 → 设置温度\n"
+            "工具: set_temperature(device_id=\"thermostat\", temp=25)\n\n"
+            "用户: \"打开客厅灯\"\n"
+            "思考: 用户明确要求开灯 → COMMAND 类别 → 打开灯光\n"
+            "工具: turn_on_light(device_id=\"living_room_light\")\n\n"
+            "用户: \"我要睡觉了\"\n"
+            "思考: 用户场景暗示需要关灯 → COMMAND 类别 → 关闭所有灯\n"
+            "工具: turn_off_all_lights()\n\n"
+            "### 关键规则:\n\n"
+            "1. **黄金法则**: 如果用户问\"X是什么/多少/怎么样\"，绝不能改变 X，只能查询并报告\n"
+            "2. QUERY 类别只能用: get_device_state, get_all_device_statuses\n"
+            "3. COMMAND 类别才能用: set_*, turn_*, open_*, close_*, lock_*, unlock_*\n"
+            "4. 优先使用批量操作工具 (如 turn_off_all_lights 而非单独关闭每个灯)\n\n"
+            "## 常见场景处理:\n\n"
+            "- \"太热了\" → COMMAND → set_temperature(20-22) 或 turn_on_fan\n"
+            "- \"太冷了\" → COMMAND → set_temperature(25-26)\n"
+            "- \"睡觉了\"/\"晚安\" → COMMAND → turn_off_all_lights, lock_all_doors\n"
+            "- \"出门\"/\"离开\" → COMMAND → turn_off_all_lights, lock_all_doors\n"
+            "- \"回家\"/\"回家啦\" → COMMAND → turn_on_light(living_room_light), unlock_all_doors\n"
+            "- \"看电视\" → COMMAND → set_light_brightness(living_room_light, 30), close_all_curtains\n"
+            "- \"起床\"/\"早上好\" → COMMAND → open_all_curtains\n"
+            "- \"太亮了\" → COMMAND → set_light_brightness 或 close_curtain\n\n"
+            "## 重要提醒:\n\n"
+            "- 先思考意图类别，再选择工具\n"
+            "- QUERY 请求只查询，不改变状态\n"
+            "- COMMAND 请求才改变状态\n"
+            "- 当用户询问\"现在温度多少\"、\"灯开着吗\"等问题时，**必须**使用 get_device_state，**禁止**使用 set_temperature\n"
         )
 
     async def _call_llm(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
@@ -489,7 +549,20 @@ class SmartHomeAgent:
 
         try:
             result = None
-            if tool_name == "turn_on_light":
+            # ========== 查询工具 (QUERY) ==========
+            if tool_name == "get_device_state":
+                device_id = arguments.get("device_id")
+                details = self.simulator.get_device_details(device_id)
+                if details:
+                    result = f"设备 {device_id} 状态:\n{json.dumps(details, ensure_ascii=False, indent=2)}"
+                else:
+                    result = f"设备 {device_id} 不存在"
+            elif tool_name == "get_all_device_statuses":
+                statuses = self.simulator.get_all_statuses()
+                result = json.dumps(statuses, ensure_ascii=False, indent=2)
+
+            # ========== 控制工具 (COMMAND) ==========
+            elif tool_name == "turn_on_light":
                 result = self.simulator.turn_on_light(**adjusted_args)
             elif tool_name == "turn_off_light":
                 result = self.simulator.turn_off_light(**adjusted_args)
@@ -531,9 +604,6 @@ class SmartHomeAgent:
             elif tool_name == "open_all_curtains":
                 results = self.simulator.open_all_curtains()
                 result = "\n".join(results)
-            elif tool_name == "get_all_device_statuses":
-                statuses = self.simulator.get_all_statuses()
-                result = json.dumps(statuses, ensure_ascii=False, indent=2)
             else:
                 return f"错误: 未知的工具 '{tool_name}'"
 
