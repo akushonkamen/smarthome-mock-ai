@@ -186,7 +186,7 @@ class DatabaseConnectionManager:
         db_path = Path(self.db_path)
         if not db_path.exists():
             # Create database by making a connection
-            with self.get_connection() as conn:
+            with self.get_connection():
                 pass
         return db_path.stat().st_size
 
