@@ -352,7 +352,7 @@ async def handle_train_command(agent: SmartHomeAgent) -> None:
         print(f"❌ 训练失败: {stats['error']}\n")
         return
 
-    print(f"✓ 训练完成!\n")
+    print("✓ 训练完成!\n")
     print(f"  处理的交互记录: {stats.get('total_interactions', 0)}")
     print(f"  学习的偏好数量: {stats.get('preferences_learned', 0)}")
 
