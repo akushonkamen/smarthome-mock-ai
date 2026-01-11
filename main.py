@@ -3,11 +3,10 @@
 import asyncio
 import os
 import sys
-from typing import NoReturn
+from typing import Any, NoReturn
 
 from dotenv import load_dotenv
 from smarthome_mock_ai.agent import SmartHomeAgent
-from smarthome_mock_ai.interaction_logger import get_interaction_logger
 from smarthome_mock_ai.simulator import HomeSimulator
 from smarthome_mock_ai.voice import VoiceListener, get_default_voice_listener
 
