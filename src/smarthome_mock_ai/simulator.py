@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from smarthome_mock_ai.device_persistence import DeviceStateManager, get_device_state_manager
 from smarthome_mock_ai.devices import (
     Curtain,
     Door,
@@ -15,10 +16,18 @@ from smarthome_mock_ai.devices import (
 class HomeSimulator:
     """家庭设备模拟器."""
 
-    def __init__(self) -> None:
-        """初始化模拟器和所有设备."""
+    def __init__(self, persist_state: bool = True, state_file: str | None = None) -> None:
+        """初始化模拟器和所有设备.
+
+        Args:
+            persist_state: Whether to save/load device states from file
+            state_file: Optional path to state file (defaults to data/devices.json)
+        """
         self.devices: dict[str, SmartDevice] = {}
+        self.persist_state = persist_state
+        self.state_manager = get_device_state_manager(state_file) if persist_state else None
         self._setup_default_devices()
+        self._load_states()
 
     def _setup_default_devices(self) -> None:
         """设置默认设备配置."""
@@ -117,6 +126,35 @@ class HomeSimulator:
         for device in self.devices.values():
             device.reset()
 
+    # ========== 状态持久化方法 ==========
+
+    def _load_states(self) -> None:
+        """Load device states from file if persistence is enabled."""
+        if not self.persist_state or self.state_manager is None:
+            return
+
+        states = self.state_manager.load_states()
+        if states:
+            updated = self.state_manager.apply_states_to_devices(self.devices, states)
+            if updated > 0:
+                print(f"✓ 已从文件加载 {updated} 个设备的状态")
+
+    def save_states(self) -> bool:
+        """Save current device states to file.
+
+        Returns:
+            True if save was successful, False otherwise
+        """
+        if not self.persist_state or self.state_manager is None:
+            return False
+
+        return self.state_manager.save_states(self.devices)
+
+    def _save_after_action(self) -> None:
+        """Save states after an action (internal method)."""
+        if self.persist_state:
+            self.save_states()
+
     # ========== 便捷操作方法 ==========
 
     def turn_on_light(self, device_id: str) -> str:
@@ -132,6 +170,7 @@ class HomeSimulator:
         if not isinstance(device, Light):
             return f"错误: 设备 '{device_id}' 不是灯光设备"
         device.turn_on()
+        self._save_after_action()
         return f"✓ 已打开 {device.name}"
 
     def turn_off_light(self, device_id: str) -> str:
@@ -147,6 +186,7 @@ class HomeSimulator:
         if not isinstance(device, Light):
             return f"错误: 设备 '{device_id}' 不是灯光设备"
         device.turn_off()
+        self._save_after_action()
         return f"✓ 已关闭 {device.name}"
 
     def set_light_brightness(self, device_id: str, level: int) -> str:
@@ -163,6 +203,7 @@ class HomeSimulator:
         if not isinstance(device, Light):
             return f"错误: 设备 '{device_id}' 不是灯光设备"
         device.set_brightness(level)
+        self._save_after_action()
         return f"✓ {device.name} 亮度已设置为 {level}%"
 
     def set_light_color(self, device_id: str, color: str) -> str:
@@ -179,6 +220,7 @@ class HomeSimulator:
         if not isinstance(device, Light):
             return f"错误: 设备 '{device_id}' 不是灯光设备"
         device.set_color(color)
+        self._save_after_action()
         return f"✓ {device.name} 颜色已设置为 {color}"
 
     def set_temperature(self, device_id: str, temp: float) -> str:
@@ -195,6 +237,7 @@ class HomeSimulator:
         if not isinstance(device, Thermostat):
             return f"错误: 设备 '{device_id}' 不是温控器"
         device.set_temperature(temp)
+        self._save_after_action()
         return f"✓ {device.name} 温度已设置为 {temp}°C"
 
     def turn_on_fan(self, device_id: str) -> str:
@@ -210,6 +253,7 @@ class HomeSimulator:
         if not isinstance(device, Fan):
             return f"错误: 设备 '{device_id}' 不是风扇设备"
         device.turn_on()
+        self._save_after_action()
         return f"✓ 已打开 {device.name}"
 
     def turn_off_fan(self, device_id: str) -> str:
@@ -225,6 +269,7 @@ class HomeSimulator:
         if not isinstance(device, Fan):
             return f"错误: 设备 '{device_id}' 不是风扇设备"
         device.turn_off()
+        self._save_after_action()
         return f"✓ 已关闭 {device.name}"
 
     def set_fan_speed(self, device_id: str, speed: int) -> str:
@@ -241,6 +286,7 @@ class HomeSimulator:
         if not isinstance(device, Fan):
             return f"错误: 设备 '{device_id}' 不是风扇设备"
         device.set_speed(speed)
+        self._save_after_action()
         return f"✓ {device.name} 速度已设置为 {speed}"
 
     def open_curtain(self, device_id: str) -> str:
@@ -256,6 +302,7 @@ class HomeSimulator:
         if not isinstance(device, Curtain):
             return f"错误: 设备 '{device_id}' 不是窗帘"
         device.open()
+        self._save_after_action()
         return f"✓ 已打开 {device.name}"
 
     def close_curtain(self, device_id: str) -> str:
@@ -271,6 +318,7 @@ class HomeSimulator:
         if not isinstance(device, Curtain):
             return f"错误: 设备 '{device_id}' 不是窗帘"
         device.close()
+        self._save_after_action()
         return f"✓ 已关闭 {device.name}"
 
     def lock_door(self, device_id: str) -> str:
@@ -286,6 +334,7 @@ class HomeSimulator:
         if not isinstance(device, Door):
             return f"错误: 设备 '{device_id}' 不是门锁"
         device.lock()
+        self._save_after_action()
         return f"✓ 已锁定 {device.name}"
 
     def unlock_door(self, device_id: str) -> str:
@@ -301,6 +350,7 @@ class HomeSimulator:
         if not isinstance(device, Door):
             return f"错误: 设备 '{device_id}' 不是门锁"
         device.unlock()
+        self._save_after_action()
         return f"✓ 已解锁 {device.name}"
 
     # ========== 批量操作 ==========

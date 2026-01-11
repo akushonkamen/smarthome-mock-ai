@@ -10,6 +10,8 @@ packages = [{include = "smarthome_mock_ai", from = "src"}]
 python = "^3.10"
 httpx = "^0.28.1"
 python-dotenv = "^1.2.1"
+SpeechRecognition = "^3.10.0"
+pyaudio = {version = "^0.2.13", markers = "sys_platform != 'darwin' or platform_machine != 'arm64'"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

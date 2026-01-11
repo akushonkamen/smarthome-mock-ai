@@ -85,3 +85,6 @@ dmypy.json
 
 # ruff
 .ruff_cache/
+
+# Data files (device states, interaction history)
+data/

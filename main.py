@@ -7,7 +7,9 @@ from typing import NoReturn
 
 from dotenv import load_dotenv
 from smarthome_mock_ai.agent import SmartHomeAgent
+from smarthome_mock_ai.interaction_logger import get_interaction_logger
 from smarthome_mock_ai.simulator import HomeSimulator
+from smarthome_mock_ai.voice import VoiceListener, get_default_voice_listener
 
 
 def print_banner() -> None:
@@ -31,6 +33,9 @@ def print_help() -> None:
   help          - 显示此帮助信息
   status        - 查看所有设备状态
   devices       - 列出所有可用设备
+  record / r    - 使用语音输入 (🎤 按下开始录音)
+  preferences   - 显示已学习的用户偏好
+  train         - 重新训练偏好模型
   reset         - 重置所有设备到初始状态
   clear         - 清空屏幕
   exit / quit   - 退出程序
@@ -113,13 +118,19 @@ def print_device_statuses(simulator: HomeSimulator) -> None:
         print()
 
 
-async def process_command(user_input: str, agent: SmartHomeAgent, simulator: HomeSimulator) -> bool:
+async def process_command(
+    user_input: str,
+    agent: SmartHomeAgent,
+    simulator: HomeSimulator,
+    voice_listener: VoiceListener | None = None
+) -> bool:
     """处理用户命令.
 
     Args:
         user_input: 用户输入
         agent: AI Agent 实例
         simulator: 模拟器实例
+        voice_listener: 语音监听器实例
 
     Returns:
         是否继续运行
@@ -155,12 +166,189 @@ async def process_command(user_input: str, agent: SmartHomeAgent, simulator: Hom
         print_banner()
         return True
 
+    # Handle voice recording command
+    if user_input.lower() in ["record", "r"]:
+        await handle_voice_input(agent, simulator, voice_listener)
+        return True
+
+    # Handle preferences command
+    if user_input.lower() == "preferences":
+        await handle_preferences_command(agent)
+        return True
+
+    # Handle train command
+    if user_input.lower() == "train":
+        await handle_train_command(agent)
+        return True
+
     # 使用 AI Agent 处理自然语言命令
     print("\n🤖 正在处理您的请求...\n")
     result = await agent.process(user_input)
-    print(f"{result}\n")
+
+    # Print the result message
+    print(f"{result['message']}\n")
+
+    # Collect feedback if action was performed
+    if result["success"] and result["action_id"] and result.get("actions_taken"):
+        await collect_feedback(result["action_id"], agent.logger)
 
     return True
+
+
+async def collect_feedback(action_id: str, logger: Any) -> None:
+    """Collect user feedback for an action.
+
+    Args:
+        action_id: The ID of the action to get feedback for
+        logger: The interaction logger instance
+    """
+    if logger is None:
+        return
+
+    try:
+        feedback = input("👆 这是否正确? (y/n, 或按 Enter 跳过): ").strip().lower()
+
+        if not feedback:
+            return  # User skipped feedback
+
+        if feedback in ["y", "yes", "是"]:
+            # Positive feedback
+            logger.record_feedback(action_id, 1)
+            print("✓ 感谢您的反馈!\n")
+        elif feedback in ["n", "no", "否"]:
+            # Negative feedback - ask for correction
+            correction = input("📝 请描述正确的操作 (或按 Enter 跳过): ").strip()
+            if correction:
+                logger.record_feedback(action_id, -1, correction)
+                print("✓ 感谢您的反馈! 我们会学习这个改进。\n")
+            else:
+                logger.record_feedback(action_id, -1)
+                print("✓ 反馈已记录。\n")
+        else:
+            print("⚠️  无效输入,已跳过反馈。\n")
+
+    except Exception as e:
+        print(f"⚠️  记录反馈时出错: {e}\n")
+
+
+async def handle_preferences_command(agent: SmartHomeAgent) -> None:
+    """Handle the 'preferences' command.
+
+    Args:
+        agent: SmartHomeAgent instance
+    """
+    summary = agent.get_preference_summary()
+
+    if "error" in summary:
+        print(f"\n❌ {summary['error']}\n")
+        return
+
+    print("\n📊 已学习的用户偏好:\n")
+
+    tool_display_names = {
+        "set_temperature": "温度设置",
+        "set_light_brightness": "灯光亮度",
+        "set_fan_speed": "风扇速度",
+    }
+
+    if not summary["tools"]:
+        print("  尚未学习到任何偏好。\n")
+        print("  提示: 多次使用系统并纠正错误的建议,系统将逐渐学习您的偏好。\n")
+        return
+
+    for tool_name, contexts in summary["tools"].items():
+        display_name = tool_display_names.get(tool_name, tool_name)
+        print(f"  🎯 {display_name}:")
+
+        for context, prefs in contexts.items():
+            print(f"    场景: {context}")
+            for pref in prefs[:3]:  # Show top 3
+                print(f"      - 值: {pref['value']}, 置信度: {pref['confidence']}")
+        print()
+
+    print(f"  总共学习了 {summary['total_preferences']} 个偏好。\n")
+
+
+async def handle_train_command(agent: SmartHomeAgent) -> None:
+    """Handle the 'train' command to retrain the preference model.
+
+    Args:
+        agent: SmartHomeAgent instance
+    """
+    print("\n📚 正在重新训练偏好模型...\n")
+
+    stats = agent.train_preferences()
+
+    if "error" in stats:
+        print(f"❌ 训练失败: {stats['error']}\n")
+        return
+
+    print(f"✓ 训练完成!\n")
+    print(f"  处理的交互记录: {stats.get('total_interactions', 0)}")
+    print(f"  学习的偏好数量: {stats.get('preferences_learned', 0)}")
+
+    if stats.get("tools_updated"):
+        print(f"  更新的工具: {', '.join(stats['tools_updated'])}")
+
+    print()
+
+
+async def handle_voice_input(
+    agent: SmartHomeAgent,
+    simulator: HomeSimulator,
+    voice_listener: VoiceListener | None = None
+) -> None:
+    """Handle voice input from the user.
+
+    Args:
+        agent: AI Agent 实例
+        simulator: 模拟器实例
+        voice_listener: 语音监听器实例
+    """
+    if voice_listener is None:
+        print("\n❌ 语音功能未初始化。请确保已安装 pyaudio 库。\n")
+        return
+
+    if not voice_listener.is_available():
+        print("\n❌ 未检测到麦克风设备。请检查:\n")
+        print("   1. 是否已连接麦克风\n")
+        print("   2. 系统声音设置是否正确\n")
+        print("   3. 是否已安装 pyaudio: pip install pyaudio\n")
+        return
+
+    # Check for OpenAI API key
+    if not voice_listener.OPENAI_API_KEY:
+        print("\n❌ 未设置 OPENAI_API_KEY 环境变量。")
+        print("   请在 .env 文件中添加您的 OpenAI API Key 以使用语音转文字功能。\n")
+        return
+
+    try:
+        # Listen and transcribe
+        print("\n" + "="*50)
+        print("🎤 语音输入模式")
+        print("="*50 + "\n")
+
+        transcribed_text = await voice_listener.listen_and_transcribe()
+
+        if not transcribed_text:
+            print("\n⚠️ 未能识别到语音内容,请重试。\n")
+            return
+
+        print(f"\n📝 识别结果: \"{transcribed_text}\"\n")
+
+        # Process the transcribed text through the agent
+        print("🤖 正在处理您的请求...\n")
+        result = await agent.process(transcribed_text)
+        print(f"{result['message']}\n")
+
+        # Collect feedback if action was performed
+        if result["success"] and result["action_id"] and result.get("actions_taken"):
+            await collect_feedback(result["action_id"], agent.logger)
+
+    except RuntimeError as e:
+        print(f"\n❌ 语音输入错误: {e}\n")
+    except Exception as e:
+        print(f"\n❌ 发生意外错误: {e}\n")
 
 
 async def run_cli() -> NoReturn:
@@ -172,12 +360,32 @@ async def run_cli() -> NoReturn:
     simulator = HomeSimulator()
     agent = SmartHomeAgent(simulator)
 
-    print("✅ 系统已就绪! 输入您的命令或自然语言指令 (输入 'help' 查看帮助)\n")
+    # Train preferences on startup
+    print("📚 正在加载您的偏好设置...")
+    stats = agent.train_preferences()
+    if "error" not in stats and stats.get("total_interactions", 0) > 0:
+        print(f"✓ 已加载 {stats['total_interactions']} 条历史交互记录")
+        if stats.get("preferences_learned", 0) > 0:
+            print(f"✓ 已学习 {stats['preferences_learned']} 个用户偏好")
+    print()
+
+    # Initialize voice listener
+    voice_listener = None
+    try:
+        voice_listener = get_default_voice_listener()
+        if voice_listener.is_available():
+            print("✅ 语音输入已就绪! (输入 'r' 或 'record' 开始录音)")
+        else:
+            print("⚠️  未检测到麦克风,语音输入功能不可用")
+    except Exception as e:
+        print(f"⚠️  语音功能初始化失败: {e}")
+
+    print("\n✅ 系统已就绪! 输入您的命令或自然语言指令 (输入 'help' 查看帮助)\n")
 
     while True:
         try:
             user_input = input("🏠 您的需求 > ").strip()
-            should_continue = await process_command(user_input, agent, simulator)
+            should_continue = await process_command(user_input, agent, simulator, voice_listener)
             if not should_continue:
                 print("\n👋 再见! 感谢使用 SmartHome Mock AI\n")
                 sys.exit(0)

@@ -2,9 +2,13 @@
 
 import json
 import os
+from datetime import datetime
 from typing import Any
 
 import httpx
+
+from smarthome_mock_ai.interaction_logger import InteractionLogger, get_interaction_logger
+from smarthome_mock_ai.learning import PreferenceModel, get_preference_model
 
 
 class SmartHomeAgent:
@@ -18,14 +22,24 @@ class SmartHomeAgent:
         """获取 API Key."""
         return os.getenv("ZHIPU_API_KEY", "")
 
-    def __init__(self, simulator: Any) -> None:
+    def __init__(self, simulator: Any, enable_logging: bool = True, enable_learning: bool = True) -> None:
         """初始化 Agent.
 
         Args:
             simulator: HomeSimulator 实例
+            enable_logging: 是否启用交互日志记录
+            enable_learning: 是否启用习惯学习功能
         """
         self.simulator = simulator
         self.tools = self._define_tools()
+        self.enable_logging = enable_logging
+        self.enable_learning = enable_learning
+        self.logger: InteractionLogger | None = get_interaction_logger() if enable_logging else None
+        self.preference_model: PreferenceModel | None = get_preference_model() if enable_learning else None
+
+        # Load existing preferences if available
+        if self.preference_model:
+            self.preference_model.load_preferences()
 
     def _define_tools(self) -> list[dict[str, Any]]:
         """定义可用的工具/函数.
@@ -463,65 +477,94 @@ class SmartHomeAgent:
         Returns:
             执行结果
         """
+        # Apply learned preferences before executing
+        context = self._capture_context()
+        adjusted_args, preference_message = self._apply_preferences(tool_name, arguments, context)
+
+        if preference_message:
+            # Log the preference adjustment
+            result_messages = [preference_message]
+        else:
+            result_messages = []
+
         try:
+            result = None
             if tool_name == "turn_on_light":
-                return self.simulator.turn_on_light(**arguments)
-            if tool_name == "turn_off_light":
-                return self.simulator.turn_off_light(**arguments)
-            if tool_name == "set_light_brightness":
-                return self.simulator.set_light_brightness(**arguments)
-            if tool_name == "set_light_color":
-                return self.simulator.set_light_color(**arguments)
-            if tool_name == "set_temperature":
-                return self.simulator.set_temperature(**arguments)
-            if tool_name == "turn_on_fan":
-                return self.simulator.turn_on_fan(**arguments)
-            if tool_name == "turn_off_fan":
-                return self.simulator.turn_off_fan(**arguments)
-            if tool_name == "set_fan_speed":
-                return self.simulator.set_fan_speed(**arguments)
-            if tool_name == "open_curtain":
-                return self.simulator.open_curtain(**arguments)
-            if tool_name == "close_curtain":
-                return self.simulator.close_curtain(**arguments)
-            if tool_name == "lock_door":
-                return self.simulator.lock_door(**arguments)
-            if tool_name == "unlock_door":
-                return self.simulator.unlock_door(**arguments)
-            if tool_name == "turn_off_all_lights":
+                result = self.simulator.turn_on_light(**adjusted_args)
+            elif tool_name == "turn_off_light":
+                result = self.simulator.turn_off_light(**adjusted_args)
+            elif tool_name == "set_light_brightness":
+                result = self.simulator.set_light_brightness(**adjusted_args)
+            elif tool_name == "set_light_color":
+                result = self.simulator.set_light_color(**adjusted_args)
+            elif tool_name == "set_temperature":
+                result = self.simulator.set_temperature(**adjusted_args)
+            elif tool_name == "turn_on_fan":
+                result = self.simulator.turn_on_fan(**adjusted_args)
+            elif tool_name == "turn_off_fan":
+                result = self.simulator.turn_off_fan(**adjusted_args)
+            elif tool_name == "set_fan_speed":
+                result = self.simulator.set_fan_speed(**adjusted_args)
+            elif tool_name == "open_curtain":
+                result = self.simulator.open_curtain(**adjusted_args)
+            elif tool_name == "close_curtain":
+                result = self.simulator.close_curtain(**adjusted_args)
+            elif tool_name == "lock_door":
+                result = self.simulator.lock_door(**adjusted_args)
+            elif tool_name == "unlock_door":
+                result = self.simulator.unlock_door(**adjusted_args)
+            elif tool_name == "turn_off_all_lights":
                 results = self.simulator.turn_off_all_lights()
-                return "\n".join(results)
-            if tool_name == "turn_on_all_lights":
+                result = "\n".join(results)
+            elif tool_name == "turn_on_all_lights":
                 results = self.simulator.turn_on_all_lights()
-                return "\n".join(results)
-            if tool_name == "lock_all_doors":
+                result = "\n".join(results)
+            elif tool_name == "lock_all_doors":
                 results = self.simulator.lock_all_doors()
-                return "\n".join(results)
-            if tool_name == "unlock_all_doors":
+                result = "\n".join(results)
+            elif tool_name == "unlock_all_doors":
                 results = self.simulator.unlock_all_doors()
-                return "\n".join(results)
-            if tool_name == "close_all_curtains":
+                result = "\n".join(results)
+            elif tool_name == "close_all_curtains":
                 results = self.simulator.close_all_curtains()
-                return "\n".join(results)
-            if tool_name == "open_all_curtains":
+                result = "\n".join(results)
+            elif tool_name == "open_all_curtains":
                 results = self.simulator.open_all_curtains()
-                return "\n".join(results)
-            if tool_name == "get_all_device_statuses":
+                result = "\n".join(results)
+            elif tool_name == "get_all_device_statuses":
                 statuses = self.simulator.get_all_statuses()
-                return json.dumps(statuses, ensure_ascii=False, indent=2)
-            return f"错误: 未知的工具 '{tool_name}'"
+                result = json.dumps(statuses, ensure_ascii=False, indent=2)
+            else:
+                return f"错误: 未知的工具 '{tool_name}'"
+
+            # Combine preference message with result
+            if result_messages:
+                result_messages.append(result)
+                return "\n".join(result_messages)
+            return result
+
         except Exception as e:
             return f"执行失败: {e}"
 
-    async def process(self, user_input: str) -> str:
+    async def process(self, user_input: str) -> dict[str, Any]:
         """处理用户输入.
 
         Args:
             user_input: 用户自然语言输入
 
         Returns:
-            处理结果
+            处理结果字典,包含:
+                - success: 是否成功
+                - message: 结果消息
+                - action_id: 动作ID (用于反馈)
+                - actions_taken: 执行的动作列表
         """
+        # Generate action ID
+        action_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{hash(user_input) % 10000:04d}"
+
+        # Capture context before processing
+        context = self._capture_context()
+
         messages = [
             {"role": "system", "content": self._build_system_prompt()},
             {"role": "user", "content": user_input},
@@ -530,7 +573,21 @@ class SmartHomeAgent:
         response = await self._call_llm(messages)
 
         if "error" in response:
-            return f"❌ {response['error']}"
+            error_result = {
+                "success": False,
+                "message": f"❌ {response['error']}",
+                "action_id": action_id,
+                "actions_taken": [],
+            }
+            # Log failed interaction
+            if self.enable_logging and self.logger:
+                self.logger.log_interaction(
+                    user_command=user_input,
+                    agent_action={"error": response["error"]},
+                    context=context,
+                    action_id=action_id,
+                )
+            return error_result
 
         try:
             assistant_message = response["choices"][0]["message"]
@@ -538,30 +595,94 @@ class SmartHomeAgent:
             # 检查是否有工具调用
             if "tool_calls" not in assistant_message or not assistant_message["tool_calls"]:
                 # 没有工具调用,返回文本响应
-                return assistant_message.get("content", "我理解了,但没有执行任何操作。")
+                text_response = assistant_message.get("content", "我理解了,但没有执行任何操作。")
+                result = {
+                    "success": True,
+                    "message": text_response,
+                    "action_id": action_id,
+                    "actions_taken": [],
+                }
+                # Log interaction with no tool calls
+                if self.enable_logging and self.logger:
+                    self.logger.log_interaction(
+                        user_command=user_input,
+                        agent_action={"response": text_response},
+                        context=context,
+                        action_id=action_id,
+                    )
+                return result
 
             # 执行所有工具调用
+            actions_taken = []
             results = []
             for tool_call in assistant_message["tool_calls"]:
                 function = tool_call["function"]
                 tool_name = function["name"]
                 arguments = json.loads(function["arguments"])
 
+                action_record = {"tool": tool_name, "arguments": arguments}
+                actions_taken.append(action_record)
+
                 result = self._execute_tool_call(tool_name, arguments)
                 results.append(result)
 
-            return "\n".join(results)
-        except (KeyError, IndexError, json.JSONDecodeError) as e:
-            return f"❌ 解析响应失败: {e}"
+            result_message = "\n".join(results)
+            result = {
+                "success": True,
+                "message": result_message,
+                "action_id": action_id,
+                "actions_taken": actions_taken,
+            }
 
-    def process_sync(self, user_input: str) -> str:
+            # Log interaction with tool calls
+            if self.enable_logging and self.logger:
+                self.logger.log_interaction(
+                    user_command=user_input,
+                    agent_action={"actions": actions_taken, "result": result_message},
+                    context=context,
+                    action_id=action_id,
+                )
+
+            return result
+        except (KeyError, IndexError, json.JSONDecodeError) as e:
+            error_result = {
+                "success": False,
+                "message": f"❌ 解析响应失败: {e}",
+                "action_id": action_id,
+                "actions_taken": [],
+            }
+            # Log failed interaction
+            if self.enable_logging and self.logger:
+                self.logger.log_interaction(
+                    user_command=user_input,
+                    agent_action={"error": str(e)},
+                    context=context,
+                    action_id=action_id,
+                )
+            return error_result
+
+    def _capture_context(self) -> dict[str, Any]:
+        """Capture the current context for logging.
+
+        Returns:
+            Context dictionary with time and device states
+        """
+        now = datetime.now()
+        return {
+            "timestamp": now.isoformat(),
+            "time_of_day": now.hour,
+            "day_of_week": now.weekday(),
+            "device_states": self.simulator.get_all_statuses(),
+        }
+
+    def process_sync(self, user_input: str) -> dict[str, Any]:
         """同步版本的处理方法.
 
         Args:
             user_input: 用户自然语言输入
 
         Returns:
-            处理结果
+            处理结果字典
         """
         import asyncio
 
@@ -572,3 +693,79 @@ class SmartHomeAgent:
             asyncio.set_event_loop(loop)
 
         return loop.run_until_complete(self.process(user_input))
+
+    # ========== 偏好学习相关方法 ==========
+
+    def _apply_preferences(
+        self, tool_name: str, arguments: dict[str, Any], context: dict[str, Any]
+    ) -> tuple[dict[str, Any], str | None]:
+        """Apply learned preferences to tool arguments.
+
+        Args:
+            tool_name: The tool being called
+            arguments: Original arguments from LLM
+            context: Current context
+
+        Returns:
+            Tuple of (adjusted_arguments, preference_message)
+        """
+        if self.preference_model is None:
+            return arguments, None
+
+        return self.preference_model.adjust_arguments(tool_name, arguments, context)
+
+    def train_preferences(self) -> dict[str, Any]:
+        """Train the preference model from interaction history.
+
+        Returns:
+            Training statistics dictionary
+        """
+        if self.preference_model is None:
+            return {"error": "Learning is disabled"}
+
+        stats = self.preference_model.train()
+
+        # Save preferences after training
+        if "error" not in stats:
+            self.preference_model.save_preferences()
+
+        return stats
+
+    def get_preference_summary(self) -> dict[str, Any]:
+        """Get a summary of learned preferences.
+
+        Returns:
+            Dictionary with preference statistics
+        """
+        if self.preference_model is None:
+            return {"error": "Learning is disabled"}
+
+        return self.preference_model.get_preference_summary()
+
+    def should_retrain(self) -> bool:
+        """Check if the model should be retrained based on recent feedback.
+
+        Returns:
+            True if there are enough new interactions to warrant retraining
+        """
+        if self.preference_model is None or self.logger is None:
+            return False
+
+        try:
+            import sqlite3
+
+            with sqlite3.connect(self.preference_model.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM interaction_logs
+                    WHERE user_feedback IS NOT NULL
+                    """
+                )
+                count = cursor.fetchone()[0]
+
+                # Retrain after every 10 feedback entries
+                return count >= 10 and count % 10 == 0
+
+        except sqlite3.Error:
+            return False
