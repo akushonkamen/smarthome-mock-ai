@@ -2,15 +2,13 @@
 
 import json
 import os
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from smarthome_mock_ai.device_persistence import DeviceStateManager
-from smarthome_mock_ai.devices import Light, Thermostat, DeviceType
+from smarthome_mock_ai.devices import Light, Thermostat
 from smarthome_mock_ai.interaction_logger import InteractionLogger
+from smarthome_mock_ai.persistence import BaseRepository, DatabaseConnectionManager
 
 
 class TestDeviceStateManager:
@@ -217,7 +215,9 @@ class TestInteractionLogger:
 
     def test_record_feedback_invalid_score(self, logger):
         """Test that invalid feedback score raises error."""
-        with pytest.raises(ValueError, match="Feedback must be either 1 \\(good\\) or -1 \\(bad\\)"):
+        with pytest.raises(
+            ValueError, match="Feedback must be either 1 \\(good\\) or -1 \\(bad\\)"
+        ):
             logger.record_feedback("test_action_001", 2)
 
     def test_get_interaction_by_action_id(self, logger):
@@ -325,3 +325,266 @@ class TestInteractionLogger:
             data = json.load(f)
         assert len(data) == 2
         assert data[0]["user_command"] == "命令2"  # Most recent first
+
+
+class TestDatabaseConnectionManager:
+    """Test DatabaseConnectionManager."""
+
+    @pytest.fixture
+    def temp_db(self, tmp_path):
+        """Create a temporary database."""
+        return str(tmp_path / "test.db")
+
+    @pytest.fixture
+    def db_manager(self, temp_db):
+        """Create a database manager with temp database."""
+        return DatabaseConnectionManager(temp_db)
+
+    def test_init_creates_database_path(self, db_manager, temp_db):
+        """Test initialization sets database path."""
+        assert db_manager.db_path == temp_db
+
+    def test_initialize_schema(self, db_manager):
+        """Test schema initialization."""
+        schema = """
+        CREATE TABLE test_table (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            value INTEGER
+        )
+        """
+        db_manager.initialize_schema(schema)
+        assert db_manager.table_exists("test_table") is True
+
+    def test_get_connection_context_manager(self, db_manager):
+        """Test connection context manager."""
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)")
+            cursor.execute("INSERT INTO test (name) VALUES (?)", ("test_name",))
+            # Connection should be committed and closed here
+
+        # Verify data was persisted
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM test WHERE name=?", ("test_name",))
+            result = cursor.fetchone()
+        assert result is not None
+        assert result[0] == "test_name"
+
+    def test_execute_query(self, db_manager):
+        """Test execute_query method."""
+        # Create table first
+        db_manager.initialize_schema("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)")
+
+        row_id = db_manager.execute_query("INSERT INTO test (value) VALUES (?)", ("test_value",))
+        assert row_id is not None and row_id > 0
+
+        # Use fetch=True to get results
+        result = db_manager.execute_query(
+            "SELECT value FROM test WHERE value=?", ("test_value",), fetch=True
+        )
+        assert result is not None
+        assert len(result) > 0
+        assert result[0][0] == "test_value"
+
+    def test_execute_many(self, db_manager):
+        """Test execute_many method."""
+        db_manager.initialize_schema("CREATE TABLE test (id INTEGER PRIMARY KEY, value INTEGER)")
+
+        params_list = [(i,) for i in range(5)]
+        rowcount = db_manager.execute_many("INSERT INTO test (value) VALUES (?)", params_list)
+        assert rowcount == 5
+
+        # Verify all values were inserted
+        result = db_manager.execute_query("SELECT COUNT(*) FROM test", fetch=True)
+        count = result[0][0]
+        assert count == 5
+
+    def test_table_exists(self, db_manager):
+        """Test table_exists method."""
+        db_manager.initialize_schema("CREATE TABLE existing_table (id INTEGER PRIMARY KEY)")
+
+        assert db_manager.table_exists("existing_table") is True
+        assert db_manager.table_exists("nonexistent_table") is False
+
+    def test_get_table_info(self, db_manager):
+        """Test get_table_info method."""
+        db_manager.initialize_schema(
+            """
+        CREATE TABLE test_info (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            value INTEGER DEFAULT 0
+        )
+        """
+        )
+
+        info = db_manager.get_table_info("test_info")
+        assert len(info) == 3
+        assert info[0]["name"] == "id"
+        assert info[1]["name"] == "name"
+        assert info[2]["name"] == "value"
+
+    def test_backup_database(self, db_manager, temp_db):
+        """Test database backup."""
+        # Create some data
+        db_manager.initialize_schema("CREATE TABLE test (id INTEGER PRIMARY KEY, data TEXT)")
+        db_manager.execute_query("INSERT INTO test (data) VALUES (?)", ("backup_test",))
+
+        backup_path = db_manager.backup_database()
+        assert backup_path is not None
+        assert os.path.exists(backup_path)
+        assert backup_path.endswith(".backup")
+
+        # Verify backup has same data
+        import sqlite3
+        conn = sqlite3.connect(backup_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT data FROM test")
+        result = cursor.fetchone()
+        conn.close()
+        assert result is not None
+        assert result[0] == "backup_test"
+
+    def test_vacuum_database(self, db_manager):
+        """Test database vacuum."""
+        db_manager.initialize_schema("CREATE TABLE test (id INTEGER PRIMARY KEY, data TEXT)")
+        db_manager.execute_query("INSERT INTO test (data) VALUES (?)", ("vacuum_test",))
+
+        # Delete data to create fragmentation
+        db_manager.execute_query("DELETE FROM test")
+
+        # Vacuum should execute without error
+        db_manager.vacuum_database()
+
+    def test_get_database_size(self, db_manager):
+        """Test getting database size."""
+        size = db_manager.get_database_size()
+        assert size >= 0
+
+        # Add some data and verify size increases
+        db_manager.initialize_schema("CREATE TABLE test (id INTEGER PRIMARY KEY, data TEXT)")
+        for i in range(100):
+            db_manager.execute_query("INSERT INTO test (data) VALUES (?)", (f"data_{i}",))
+
+        new_size = db_manager.get_database_size()
+        assert new_size > size
+
+
+class TestBaseRepository:
+    """Test BaseRepository."""
+
+    @pytest.fixture
+    def db_manager(self, tmp_path):
+        """Create a database manager with test schema."""
+        temp_db = str(tmp_path / "test_repo.db")
+        manager = DatabaseConnectionManager(temp_db)
+        manager.initialize_schema(
+            """
+        CREATE TABLE test_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            value INTEGER DEFAULT 0
+        )
+        """
+        )
+        return manager
+
+    @pytest.fixture
+    def repository(self, db_manager):
+        """Create a test repository."""
+        return BaseRepository(db_manager, "test_items")
+
+    def test_find_by_id(self, repository, db_manager):
+        """Test finding a record by ID."""
+        # Insert test data
+        db_manager.execute_query("INSERT INTO test_items (name, value) VALUES (?, ?)", ("item1", 10))
+
+        found = repository.find_by_id(1)
+        assert found is not None
+        assert found["name"] == "item1"
+        assert found["value"] == 10
+
+    def test_find_by_id_not_found(self, repository):
+        """Test finding non-existent record returns None."""
+        found = repository.find_by_id(999)
+        assert found is None
+
+    def test_find_all(self, repository, db_manager):
+        """Test finding all records."""
+        # Insert test data
+        db_manager.execute_query(
+            "INSERT INTO test_items (name, value) VALUES (?, ?)", ("item1", 10)
+        )
+        db_manager.execute_query(
+            "INSERT INTO test_items (name, value) VALUES (?, ?)", ("item2", 20)
+        )
+
+        all_items = repository.find_all()
+        assert len(all_items) == 2
+
+    def test_find_all_with_limit(self, repository, db_manager):
+        """Test finding all records with limit."""
+        # Insert 5 items
+        for i in range(5):
+            db_manager.execute_query(
+                "INSERT INTO test_items (name, value) VALUES (?, ?)", (f"item{i}", i)
+            )
+
+        items = repository.find_all(limit=3)
+        assert len(items) == 3
+
+    def test_find_all_with_order(self, repository, db_manager):
+        """Test finding all records with ordering."""
+        # Insert items
+        db_manager.execute_query(
+            "INSERT INTO test_items (name, value) VALUES (?, ?)", ("item1", 30)
+        )
+        db_manager.execute_query(
+            "INSERT INTO test_items (name, value) VALUES (?, ?)", ("item2", 10)
+        )
+        db_manager.execute_query(
+            "INSERT INTO test_items (name, value) VALUES (?, ?)", ("item3", 20)
+        )
+
+        items_asc = repository.find_all(order_by="value ASC")
+        assert items_asc[0]["value"] == 10
+        assert items_asc[2]["value"] == 30
+
+        items_desc = repository.find_all(order_by="value DESC")
+        assert items_desc[0]["value"] == 30
+        assert items_desc[2]["value"] == 10
+
+    def test_count(self, repository, db_manager):
+        """Test counting records."""
+        assert repository.count() == 0
+
+        db_manager.execute_query("INSERT INTO test_items (name) VALUES (?)", ("item1",))
+        db_manager.execute_query("INSERT INTO test_items (name) VALUES (?)", ("item2",))
+
+        assert repository.count() == 2
+
+    def test_delete_by_id(self, repository, db_manager):
+        """Test deleting a record by ID."""
+        db_manager.execute_query("INSERT INTO test_items (name) VALUES (?)", ("item1",))
+
+        assert repository.count() == 1
+        deleted = repository.delete_by_id(1)
+        assert deleted is True
+        assert repository.count() == 0
+
+    def test_delete_by_id_not_found(self, repository):
+        """Test deleting non-existent record."""
+        deleted = repository.delete_by_id(999)
+        assert deleted is False
+
+    def test_delete_all(self, repository, db_manager):
+        """Test deleting all records."""
+        for i in range(5):
+            db_manager.execute_query("INSERT INTO test_items (name) VALUES (?)", (f"item{i}",))
+
+        assert repository.count() == 5
+        deleted_count = repository.delete_all()
+        assert deleted_count == 5
+        assert repository.count() == 0
